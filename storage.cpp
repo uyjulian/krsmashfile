@@ -23,6 +23,11 @@
 #include "CharacterSet.h"
 
 #if 1
+#include <zlib.h>
+#else
+#include <zlib/zlib.h>
+#endif
+#if 1
 #include <algorithm>
 #endif
 
@@ -528,6 +533,93 @@ private:
 	tjs_char *name;
 };
 
+static void apply_xorpad(tjs_uint8 *data, tjs_uint32 data_length, const tjs_uint8 *xorpad, tjs_uint32 xorpad_length, tjs_uint32 xorpad_offset)
+{
+	for (tjs_uint32 i = 0; i < data_length; i += 1)
+	{
+		data[i] ^= xorpad[(i + xorpad_offset) % xorpad_length];
+	}
+}
+
+class XP3SimpleXorEncryption : public XP3Encryption
+{
+public:
+	XP3SimpleXorEncryption() : XP3Encryption()
+	{
+		this->xorpad = NULL;
+		this->xorpad_length = 0;
+	}
+
+	virtual ~XP3SimpleXorEncryption()
+	{
+		this->RegisterXorPad(NULL, 0);
+	}
+
+	virtual void TJS_INTF_METHOD Filter(tTVPXP3ExtractionFilterInfo *info)
+	{
+		if (this->xorpad != NULL)
+		{
+			apply_xorpad((tjs_uint8 *)(info->Buffer), (tjs_uint32)(info->BufferSize), this->xorpad, this->xorpad_length, (tjs_uint32)(info->Offset));
+		}
+	}
+
+	virtual bool TJS_INTF_METHOD RegisterXorPad(const tjs_uint8 *xorpad, tjs_uint32 xorpad_length)
+	{
+		if (this->xorpad != NULL)
+		{
+			TJSAlignedDealloc(this->xorpad);
+			this->xorpad = NULL;
+			this->xorpad_length = 0;
+		}
+
+		if (xorpad != NULL)
+		{
+			this->xorpad = (tjs_uint8 *)TJSAlignedAlloc(xorpad_length, 4);
+			if (this->xorpad != NULL)
+			{
+				this->xorpad_length = xorpad_length;
+				memcpy(this->xorpad, xorpad, xorpad_length);
+				return true;
+			}
+		}
+		else
+		{
+			return true;
+		}
+		return false;
+	}
+private:
+	tjs_uint8 *xorpad;
+	tjs_uint32 xorpad_length;
+};
+static XP3SimpleXorEncryption *fpd_singleton_object = NULL;
+
+static const int FPD_HDR_SIZE = 56;
+
+#if 0
+static tjs_uint16 ReadU16BEFromMem(const tjs_uint8 *mem)
+{
+	tjs_uint16 ret = ((tjs_uint16)mem[0] << 8) | ((tjs_uint16)mem[1]);
+	return (tjs_uint16)ret;
+}
+
+static tjs_uint32 ReadU32BEFromMem(const tjs_uint8 *mem)
+{
+	tjs_uint32 ret =  ((tjs_uint32)mem[0] << 24) | ((tjs_uint32)mem[1] << 16) |
+		((tjs_uint32)mem[2] << 8) | ((tjs_uint32)mem[3]);
+	return (tjs_uint32)ret;
+}
+#endif
+
+static tjs_uint64 ReadU64BEFromMem(const tjs_uint8 *mem)
+{
+	tjs_uint64 ret = ((tjs_uint64)mem[0] << 56) | ((tjs_uint64)mem[1] << 48) |
+		((tjs_uint64)mem[2] << 40) | ((tjs_uint64)mem[3] << 32) |
+		((tjs_uint64)mem[4] << 24) | ((tjs_uint64)mem[5] << 16) |
+		((tjs_uint64)mem[6] << 8) | ((tjs_uint64)mem[7]);
+	return (tjs_uint64)ret;
+}
+
 class StoragesSmashFile {
 
 public:
@@ -727,6 +819,215 @@ public:
 		return TJS_W("");
 	}
 
+	static ttstr mountSmashFPD(ttstr filename)
+	{
+		{
+			{
+				tTVPStreamHolder filestream(filename);
+				bool is_fpd = false;
+#if 0
+				tjs_uint32 fpd_version = 0;
+#endif
+				tjs_uint64 fpd_entry_count = 0;
+				tjs_uint64 fpd_entry_block_size = 0;
+				{
+					tjs_uint8 *buffer;
+					buffer = new tjs_uint8 [FPD_HDR_SIZE];
+					try
+					{
+						filestream->ReadBuffer(buffer, FPD_HDR_SIZE);
+						if (memcmp(buffer, "FPD\x00", 4) == 0)
+						{
+							is_fpd = true;
+#if 0
+							fpd_version = ReadU32BEFromMem(&buffer[4]);
+#endif
+							fpd_entry_count = ReadU64BEFromMem(&buffer[8]);
+							fpd_entry_block_size = ReadU64BEFromMem(&buffer[16]) - FPD_HDR_SIZE;
+							if (fpd_entry_count * 32 > fpd_entry_block_size)
+							{
+								is_fpd = false;
+							}
+						}
+					}
+					catch(...)
+					{
+						delete [] buffer;
+						throw;
+					}
+					delete [] buffer;
+				}
+				if (is_fpd)
+				{
+					tjs_uint8 *buffer = NULL;
+					char *path_buffer = NULL;
+					buffer = new tjs_uint8 [fpd_entry_block_size];
+					try
+					{
+						filestream->SetPosition(FPD_HDR_SIZE);
+						filestream->ReadBuffer(buffer, fpd_entry_block_size);
+						tTVPXP3ExtractionFilterInfo filter_info(0, (tjs_uint8 *)buffer, fpd_entry_block_size, 0);
+						fpd_singleton_object->Filter(&filter_info);
+
+						tjs_uint64 entry_info_size = fpd_entry_count * 32;
+
+						unsigned long max_pathstr_offset = 0;
+
+						for (tjs_uint64 i = 0; i < fpd_entry_count; i += 1)
+						{
+							tjs_uint64 fpd_entry_item_pathstr_offset = 0;
+							fpd_entry_item_pathstr_offset = ReadU64BEFromMem(&buffer[i * 32]);
+							if (fpd_entry_item_pathstr_offset > max_pathstr_offset)
+							{
+								max_pathstr_offset = fpd_entry_item_pathstr_offset;
+							}
+						}
+
+						// Is there a better way to get the size than this?
+						unsigned long destlen = (unsigned long)(max_pathstr_offset * 2);
+
+						path_buffer = new char[destlen];
+						int result = uncompress(  /* uncompress from zlib */
+							(unsigned char *)path_buffer,
+							&destlen, (unsigned char*)&buffer[entry_info_size],
+								(unsigned long)fpd_entry_block_size);
+						if (result == Z_OK && destlen >= (unsigned long)max_pathstr_offset)
+						{
+							tTVPXP3Archive * arc = NULL;
+							try
+							{
+								if (TVPIsXP3Archive(filename))
+								{
+									arc = new tTVPXP3Archive(filename);
+									if (arc)
+									{
+										try
+										{
+											for (tjs_uint64 i = 0; i < fpd_entry_count; i += 1)
+											{
+												tjs_uint64 fpd_entry_item_pathstr_offset = 0;
+												tjs_uint64 fpd_entry_item_offset = 0;
+												tjs_uint64 fpd_entry_item_size = 0;
+												tjs_uint64 fpd_entry_item_uncompressed_size = 0;
+												fpd_entry_item_pathstr_offset = ReadU64BEFromMem(&buffer[i * 32]);
+												fpd_entry_item_offset = ReadU64BEFromMem(&buffer[(i * 32) + 8]);
+												fpd_entry_item_size = ReadU64BEFromMem(&buffer[(i * 32) + 16]);
+												fpd_entry_item_uncompressed_size = ReadU64BEFromMem(&buffer[(i * 32) + 24]);
+
+												// TODO: compressed file support
+												// TODO: fcd handling
+												if (fpd_entry_item_uncompressed_size == 0)
+												{
+													std::string item_utf8;
+													item_utf8 = &path_buffer[fpd_entry_item_pathstr_offset];
+													tjs_string item_utf16;
+													TVPUtf8ToUtf16(item_utf16, item_utf8);
+													ttstr item_ttstr;
+													item_ttstr = ttstr(item_utf16.c_str());
+													tTVPXP3Archive::tArchiveItem item;
+													item.OrgSize = fpd_entry_item_size;
+													item.ArcSize = fpd_entry_item_size;
+													item.Name = item_ttstr;
+													tTVPArchive::NormalizeInArchiveStorageName(item.Name);
+													tTVPXP3ArchiveSegment seg;
+													seg.IsCompressed = false;
+													seg.Start = fpd_entry_item_offset;
+													seg.Offset = 0;
+													seg.OrgSize = fpd_entry_item_size;
+													seg.ArcSize = fpd_entry_item_size;
+													item.Segments.push_back(seg);
+													item.FileHash = 0;
+													arc->ItemVector.push_back(item);
+												}
+											}
+											if (path_buffer)
+											{
+												delete [] path_buffer;
+												path_buffer = NULL;
+											}
+											if (buffer)
+											{
+												delete [] buffer;
+												buffer = NULL;
+											}
+
+											arc->Count = arc->ItemVector.size();
+											std::stable_sort(arc->ItemVector.begin(), arc->ItemVector.end());
+											XP3Storage * xp3storage = new XP3Storage(arc);
+											TVPRegisterStorageMedia(xp3storage);
+											storage_media_vector.push_back(xp3storage);
+											ttstr xp3storage_name;
+											xp3storage->GetName(xp3storage_name);
+											tTVPXP3ArchiveExtractionFilterWithUserdata this_encryptionfilter;
+											void *this_encryptionfilterdata;
+											fpd_singleton_object->GetArchiveExtractionFilter(this_encryptionfilter, this_encryptionfilterdata);
+											xp3storage->SetArchiveExtractionFilter(this_encryptionfilter, this_encryptionfilterdata);
+											return xp3storage_name;
+										}
+										catch(...)
+										{
+											if (path_buffer)
+											{
+												delete [] path_buffer;
+												path_buffer = NULL;
+											}
+											if (buffer)
+											{
+												delete [] buffer;
+												buffer = NULL;
+											}
+											if (arc)
+											{
+												arc->Release();
+												arc = NULL;
+											}
+											return TJS_W("");
+										}
+									}
+								}
+							}
+							catch(...)
+							{
+								if (arc)
+								{
+									arc->Release();
+									arc = NULL;
+								}
+								return TJS_W("");
+							}
+						}
+					}
+					catch(...)
+					{
+						if (path_buffer)
+						{
+							delete [] path_buffer;
+							path_buffer = NULL;
+						}
+						if (buffer)
+						{
+							delete [] buffer;
+							buffer = NULL;
+						}
+						throw;
+					}
+					if (path_buffer)
+					{
+						delete [] path_buffer;
+						path_buffer = NULL;
+					}
+					if (buffer)
+					{
+						delete [] buffer;
+						buffer = NULL;
+					}
+				}
+
+			}
+		}
+		return TJS_W("");
+	}
+
 	static bool unmountSmash(ttstr medianame)
 	{
 		for (auto i = storage_media_vector.begin();
@@ -745,16 +1046,29 @@ public:
 
 		return false;
 	}
+
+	static bool registerSmashFPDXorPad(tTJSVariant encryption_var)
+	{
+		if (encryption_var.Type() == tvtOctet)
+		{
+			const tTJSVariantOctet *oct = encryption_var.AsOctetNoAddRef();
+			return fpd_singleton_object->RegisterXorPad(oct->GetData(), oct->GetLength());
+		}
+		return fpd_singleton_object->RegisterXorPad(NULL, 0);
+	}
 };
 
 NCB_ATTACH_CLASS(StoragesSmashFile, Storages) {
 	NCB_METHOD(mountSmash);
+	NCB_METHOD(mountSmashFPD);
 	NCB_METHOD(unmountSmash);
+	NCB_METHOD(registerSmashFPDXorPad);
 };
 
 
 static void PreRegistCallback()
 {
+	fpd_singleton_object = new XP3SimpleXorEncryption();
 }
 
 static void PostUnregistCallback()
@@ -763,6 +1077,11 @@ static void PostUnregistCallback()
 		i != storage_media_vector.end(); i += 1)
 	{
 		TVPUnregisterStorageMedia(*i);
+	}
+	if (fpd_singleton_object != NULL)
+	{
+		delete fpd_singleton_object;
+		fpd_singleton_object = NULL;
 	}
 }
 
