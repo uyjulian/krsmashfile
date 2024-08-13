@@ -26,12 +26,10 @@
 #endif
 #include "tjsUtils.h"
 
-#if 0
 #if 1
 #include <zlib.h>
 #else
 #include <zlib/zlib.h>
-#endif
 #endif
 #include <algorithm>
 
@@ -669,7 +667,6 @@ tjs_int64 tTVPXP3Archive::ReadI64FromMem(const tjs_uint8 *mem)
 
 
 
-#if 0
 //---------------------------------------------------------------------------
 // Compressed segment cache related
 //---------------------------------------------------------------------------
@@ -848,7 +845,6 @@ static void TVPPushToSegmentCache(const tTVPSegmentCacheSearchData &sdata, tjs_u
 	TVPCheckSegmentCacheLimit();
 }
 //---------------------------------------------------------------------------
-#endif
 
 
 
@@ -888,9 +884,7 @@ tTVPXP3ArchiveStream::~tTVPXP3ArchiveStream()
 {
 	TVPReleaseCachedArchiveHandle(Owner, Stream);
 	Owner->Release(); // unhook
-#if 0
 	if(SegmentData) SegmentData->Release();
-#endif
 }
 //---------------------------------------------------------------------------
 void tTVPXP3ArchiveStream::EnsureSegment()
@@ -905,7 +899,6 @@ void tTVPXP3ArchiveStream::EnsureSegment()
 		return;
 	}
 
-#if 0
 	// erase buffer
 	if(SegmentData) SegmentData->Release(), SegmentData = NULL;
 
@@ -948,7 +941,6 @@ void tTVPXP3ArchiveStream::EnsureSegment()
 		}
 	}
 	else
-#endif
 	{
 		// not a compressed segment
 
@@ -1053,7 +1045,6 @@ tjs_uint TJS_INTF_METHOD tTVPXP3ArchiveStream::Read(void *buffer, tjs_uint read_
 		tjs_uint one_size =
 			read_size > SegmentRemain ? (tjs_uint)SegmentRemain : read_size;
 
-#if 0
 		if(CurSegment->IsCompressed)
 		{
 			// compressed segment; read from uncompressed data in memory
@@ -1061,7 +1052,6 @@ tjs_uint TJS_INTF_METHOD tTVPXP3ArchiveStream::Read(void *buffer, tjs_uint read_
 				SegmentData->GetData() + (tjs_uint)SegmentPos, one_size);
 		}
 		else
-#endif
 		{
 			// read directly from stream
 			Stream->ReadBuffer((tjs_uint8*)buffer + write_size, one_size);
