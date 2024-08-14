@@ -455,6 +455,11 @@ public:
 		fs->SetArchiveExtractionFilter(filter, filterdata);
 	}
 
+	virtual void TJS_INTF_METHOD SetArchiveExtractionPreFilter(tTVPXP3ArchiveExtractionFilterWithUserdata filter, void *filterdata)
+	{
+		fs->SetArchiveExtractionPreFilter(filter, filterdata);
+	}
+
 private:
 	tjs_uint ref_count;
 	tjs_char *name;
@@ -914,31 +919,27 @@ public:
 												fpd_entry_item_size = ReadU64BEFromMem(&buffer[(i * 32) + 16]);
 												fpd_entry_item_uncompressed_size = ReadU64BEFromMem(&buffer[(i * 32) + 24]);
 
-												// TODO: compressed file support
 												// TODO: fcd handling
-												if (fpd_entry_item_uncompressed_size == 0)
-												{
-													std::string item_utf8;
-													item_utf8 = &path_buffer[fpd_entry_item_pathstr_offset];
-													tjs_string item_utf16;
-													TVPUtf8ToUtf16(item_utf16, item_utf8);
-													ttstr item_ttstr;
-													item_ttstr = ttstr(item_utf16.c_str());
-													tTVPXP3Archive::tArchiveItem item;
-													item.OrgSize = fpd_entry_item_size;
-													item.ArcSize = fpd_entry_item_size;
-													item.Name = item_ttstr;
-													tTVPArchive::NormalizeInArchiveStorageName(item.Name);
-													tTVPXP3ArchiveSegment seg;
-													seg.IsCompressed = false;
-													seg.Start = fpd_entry_item_offset;
-													seg.Offset = 0;
-													seg.OrgSize = fpd_entry_item_size;
-													seg.ArcSize = fpd_entry_item_size;
-													item.Segments.push_back(seg);
-													item.FileHash = 0;
-													arc->ItemVector.push_back(item);
-												}
+												std::string item_utf8;
+												item_utf8 = &path_buffer[fpd_entry_item_pathstr_offset];
+												tjs_string item_utf16;
+												TVPUtf8ToUtf16(item_utf16, item_utf8);
+												ttstr item_ttstr;
+												item_ttstr = ttstr(item_utf16.c_str());
+												tTVPXP3Archive::tArchiveItem item;
+												item.OrgSize = (fpd_entry_item_uncompressed_size != 0) ? fpd_entry_item_uncompressed_size : fpd_entry_item_size;
+												item.ArcSize = fpd_entry_item_size;
+												item.Name = item_ttstr;
+												tTVPArchive::NormalizeInArchiveStorageName(item.Name);
+												tTVPXP3ArchiveSegment seg;
+												seg.IsCompressed = fpd_entry_item_uncompressed_size != 0;
+												seg.Start = fpd_entry_item_offset;
+												seg.Offset = 0;
+												seg.OrgSize = (fpd_entry_item_uncompressed_size != 0) ? fpd_entry_item_uncompressed_size : fpd_entry_item_size;
+												seg.ArcSize = fpd_entry_item_size;
+												item.Segments.push_back(seg);
+												item.FileHash = 0;
+												arc->ItemVector.push_back(item);
 											}
 											if (path_buffer)
 											{
@@ -961,7 +962,7 @@ public:
 											tTVPXP3ArchiveExtractionFilterWithUserdata this_encryptionfilter;
 											void *this_encryptionfilterdata;
 											fpd_singleton_object->GetArchiveExtractionFilter(this_encryptionfilter, this_encryptionfilterdata);
-											xp3storage->SetArchiveExtractionFilter(this_encryptionfilter, this_encryptionfilterdata);
+											xp3storage->SetArchiveExtractionPreFilter(this_encryptionfilter, this_encryptionfilterdata);
 											return xp3storage_name;
 										}
 										catch(...)
