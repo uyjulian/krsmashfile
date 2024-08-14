@@ -123,6 +123,9 @@ public:
 
 	tTVPXP3ArchiveExtractionFilterWithUserdata TVPXP3ArchiveExtractionFilter;
 	void *TVPXP3ArchiveExtractionFilterData;
+
+	tTVPXP3ArchiveExtractionFilterWithUserdata TVPXP3ArchiveExtractionPreFilter;
+	void *TVPXP3ArchiveExtractionPreFilterData;
 public:
 	tTVPXP3Archive(const ttstr & name);
 	~tTVPXP3Archive();
@@ -137,6 +140,7 @@ public:
 	tTJSBinaryStream * CreateStreamByIndex(tjs_uint idx);
 
 	void SetArchiveExtractionFilter(tTVPXP3ArchiveExtractionFilterWithUserdata filter, void* filterdata);
+	void SetArchiveExtractionPreFilter(tTVPXP3ArchiveExtractionFilterWithUserdata filter, void* filterdata);
 
 private:
 	static bool FindChunk(const tjs_uint8 *data, const tjs_uint8 * name,
@@ -183,12 +187,15 @@ class tTVPXP3ArchiveStream : public tTJSBinaryStream
 	tTVPXP3ArchiveExtractionFilterWithUserdata TVPXP3ArchiveExtractionFilter; // per stream archive extraction filter
 	void *TVPXP3ArchiveExtractionFilterData;
 
+	tTVPXP3ArchiveExtractionFilterWithUserdata TVPXP3ArchiveExtractionPreFilter; // per stream archive pre extraction filter
+	void *TVPXP3ArchiveExtractionPreFilterData;
+
 public:
 	tTVPXP3ArchiveStream(tTVPXP3Archive *owner, tjs_int storageindex,
 		std::vector<tTVPXP3ArchiveSegment> *segments, tTJSBinaryStream *stream,
 		tjs_uint64 orgsize,
-		tTVPXP3ArchiveExtractionFilterWithUserdata filter,
-		void *filterdata);
+		tTVPXP3ArchiveExtractionFilterWithUserdata filter, void *filterdata,
+		tTVPXP3ArchiveExtractionFilterWithUserdata prefilter, void *prefilterdata);
 	~tTVPXP3ArchiveStream();
 
 private:
