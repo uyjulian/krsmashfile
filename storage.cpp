@@ -546,6 +546,14 @@ static void apply_xorpad(tjs_uint8 *data, tjs_uint32 data_length, const tjs_uint
 	}
 }
 
+static void apply_xorpad_pow2(tjs_uint8 *data, tjs_uint32 data_length, const tjs_uint8 *xorpad, tjs_uint32 xorpad_length, tjs_uint32 xorpad_offset)
+{
+	for (tjs_uint32 i = 0; i < data_length; i += 1)
+	{
+		data[i] ^= xorpad[(i + xorpad_offset) & (xorpad_length - 1)];
+	}
+}
+
 class XP3SimpleXorEncryption : public XP3Encryption
 {
 public:
@@ -564,7 +572,15 @@ public:
 	{
 		if (this->xorpad != NULL)
 		{
-			apply_xorpad((tjs_uint8 *)(info->Buffer), (tjs_uint32)(info->BufferSize), this->xorpad, this->xorpad_length, (tjs_uint32)(info->Offset));
+			tjs_uint32 x = this->xorpad_length;
+			if ((x != 0) && ((x & (x - 1)) == 0))
+			{
+				apply_xorpad_pow2((tjs_uint8 *)(info->Buffer), (tjs_uint32)(info->BufferSize), this->xorpad, this->xorpad_length, (tjs_uint32)(info->Offset));
+			}
+			else
+			{
+				apply_xorpad((tjs_uint8 *)(info->Buffer), (tjs_uint32)(info->BufferSize), this->xorpad, this->xorpad_length, (tjs_uint32)(info->Offset));
+			}
 		}
 	}
 
